@@ -3,9 +3,10 @@ import './MapFrame.scss';
 import { type Map } from "maplibre-gl"
 import { AnswerValidator } from '../../utils/answerValidator';
 import { MapContext, useData } from '../..';
+import { fetchBrouterGeoJson } from './brouter';
 
 export const MapFrame: FC<{
-  validator: AnswerValidator,
+  validator: AnswerValidator
 }> = ({ validator }) => {
   const { stations, routes, shapes } = useData();
   const mapContainer = useRef<HTMLDivElement | null>(null);
@@ -17,15 +18,16 @@ export const MapFrame: FC<{
   const [zoom, setZoom] = useState(initialMapSettings.zoom);
   const solution = validator.todaysSolution;
 
+  const stops = [
+    solution.origin,
+    solution.first_transfer_arrival,
+    solution.first_transfer_departure,
+    solution.second_transfer_arrival,
+    solution.second_transfer_departure,
+    solution.destination
+  ];
+
   const stopsGeoJson = () => {
-    const stops = [
-      solution.origin,
-      solution.first_transfer_arrival,
-      solution.first_transfer_departure,
-      solution.second_transfer_arrival,
-      solution.second_transfer_departure,
-      solution.destination
-    ];
     return {
       "type": "FeatureCollection",
       "features": [...new Set(stops)].map((stopId) => {
@@ -118,33 +120,40 @@ export const MapFrame: FC<{
           const solution = validator.todaysSolution;
           const image = await map.current.loadImage("ic--twotone-circle.png");
           map.current.addImage("custom-marker", image.data);
-          let coordinates: number[] = [];
-          for (const line of [
-            {
-              route: trip[0],
-              begin: solution.origin,
-              end: solution.first_transfer_arrival,
-            },
-            {
-              route: trip[1],
-              begin: solution.first_transfer_departure,
-              end: solution.second_transfer_arrival,
-            },
-            {
-              route: trip[2],
-              begin: solution.second_transfer_departure,
-              end: solution.destination,
-            },
-          ]) {
-            const lineJson = lineGeoJson(line);
-            // @ts-expect-error
-            coordinates = coordinates.concat(lineJson.geometry.coordinates);
+
+          const lines = [{
+            route: trip[0],
+            begin: solution.origin,
+            end: solution.first_transfer_arrival,
+          },
+          {
+            route: trip[1],
+            begin: solution.first_transfer_departure,
+            end: solution.second_transfer_arrival,
+          },
+          {
+            route: trip[2],
+            begin: solution.second_transfer_departure,
+            end: solution.destination,
+          }];
+
+          const getCoords = (stopId: string) => ({ latitude: stations[stopId].latitude, longitude: stations[stopId].longitude });
+          let lineJson;
+          try {
+            lineJson = await fetchBrouterGeoJson(lines.map(line => [getCoords(line.begin), getCoords(line.end)]));
+          } catch (error) {
+            console.error("Failed to retrieve routing from brouter.");
+            lineJson = lines.map(line => lineGeoJson(line));
+          }
+
+          lines.forEach((line, index) => {
             const layerId = `line-${line.route}-${line.begin}-${line.end}`;
-            map.current.addSource(layerId, {
+            lineJson[index].features[0].properties.color = routes[line.route].color;
+            map.current!!.addSource(layerId, {
               "type": "geojson",
-              "data": lineJson,
+              "data": lineJson[index],
             });
-            map.current.addLayer({
+            map.current!!.addLayer({
               "id": layerId,
               "type": "line",
               "source": layerId,
@@ -157,7 +166,7 @@ export const MapFrame: FC<{
                 "line-color": ["get", "color"],
               }
             });
-          }
+          });
           const stopsJson = stopsGeoJson();
           map.current.addSource("Stops", {
             "type": "geojson",
