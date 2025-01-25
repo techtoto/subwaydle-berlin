@@ -1,8 +1,10 @@
-import { useRef, useEffect, useState, FC, useContext } from 'react';
+import { useRef, useEffect, useState, FC, useContext, useMemo } from 'react';
 import './MapFrame.scss';
 import { type Map } from "maplibre-gl"
 import { AnswerValidator } from '../../utils/answerValidator';
 import { MapContext, useData } from '../..';
+import { colorful } from '@versatiles/style';
+import { useTranslation } from 'react-i18next';
 
 export const MapFrame: FC<{
   validator: AnswerValidator,
@@ -16,6 +18,12 @@ export const MapFrame: FC<{
   const [lat, setLat] = useState(initialMapSettings.latitude);
   const [zoom, setZoom] = useState(initialMapSettings.zoom);
   const solution = validator.todaysSolution;
+  const { i18n } = useTranslation();
+  const language = i18n.languages[0];
+  const style = useMemo(() => colorful({
+    language: language === 'de' ? language : 'en',
+    baseUrl: "https://tiles.versatiles.org",
+  }), [language]);
 
   const stopsGeoJson = () => {
     const stops = [
@@ -100,7 +108,7 @@ export const MapFrame: FC<{
       .then(({ Map }) => {
         map.current = new Map({
           container: mapContainer.current!!,
-          style: 'https://tiles.versatiles.org/assets/styles/colorful.json',
+          style,
           center: [lng, lat],
           minZoom: 1,
           zoom: zoom,
